@@ -1,0 +1,3 @@
+{:source-paths ["src"]
+ :dependencies [[cider/cider-nrepl "0.22.1"]]
+}
