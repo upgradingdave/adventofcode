@@ -23,7 +23,3 @@
 (comment
   (def sol1 (part1 "files/day1.in"))
   (def sol2 (part2 "files/day1.in")))
-
-
-
-
