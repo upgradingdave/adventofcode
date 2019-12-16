@@ -1,11 +1,25 @@
-(ns advent2019.day5)
+(ns advent2019.day7
+  (:require [clojure.math.combinatorics :as combo]
+            [clojure.core.async :as async :refer [go <! >! chan
+                                                  <!! >!! go-loop]]))
+
+;; (def inputs (atom '()))
+
+;; (defn read-next! []
+;;   (let [val (first @inputs)]
+;;     (reset! inputs (rest @inputs))
+;;     (println "NEXT VAL: " val)
+;;     val))
+
+;; (defn write-next! [val]
+;;   (swap! inputs conj val))
 
 (defn make-opcode [opcode-input]
   (format "%05d" opcode-input))
 
-(defn intcode [inputs]
-  (loop [idx 0
-         result inputs]
+(defn intcode [program inchan outchan]
+  (go-loop [idx 0
+            result program]
 
     ;; Read the operation and then we can determine next steps
     (let [cmd (make-opcode (nth result idx))
@@ -43,20 +57,20 @@
               ]
           (recur (+ 4 idx) result))
 
-        ;; store
+        ;; read from input and store
         (= opcode 3)
-        (let [[_ x] (take 2 (drop idx result))
-              y (Integer/parseInt (read-line))
-              result (assoc result x y)
-              ]
-          ;;(println "storing y:" y " in position: " x)
-          (recur (+ 2 idx) result))
+        (let [[_ x] (take 2 (drop idx result))]
+          ;;(println "Waiting for input ...")
+          (let [y (<! inchan)
+                result (assoc result x y)]
+            (recur (+ 2 idx) result)))
 
         ;; output
         (= opcode 4)
         (let [[_ x] (take 2 (drop idx result))
               x (if param1 (get result x) x)]
-          (println "DIAGNOSTIC CODE: " (nth result x))
+          (>! outchan x)
+          ;;(println "DIAGNOSTIC CODE: " x)
           (recur (+ 2 idx) result))
 
         ;; jump-if-true
@@ -99,24 +113,56 @@
 
         ;; halt
         :else
-        (println "done!")))))
+        nil
+        ;;(println "HALT")
+        ))))
 
-(defn read-input [path-to-file]
-  (into [] (map #(Integer/parseInt %1) (.split (slurp path-to-file) ","))))
+(defn parse-program [path-to-file]
+  (into [] (map #(Integer/parseInt (.trim %1)) (.split (slurp path-to-file) ","))))
 
-(def input1 [1002,4,3,4,33])
-(def input2 (read-input "files/day5.in"))
-(def inputEq8 [3,9,8,9,10,9,4,9,99,-1,8])
-(def inputLt8 [3,9,7,9,10,9,4,9,99,-1,8])
-(def inputEq8i [3,3,1108,-1,8,3,4,3,99])
-(def inputLt8i [3,3,1107,-1,8,3,4,3,99])
-(def inputNot0 [3,12,6,12,15,1,13,14,13,4,13,99,-1,0,1,9])
-(def inputNot0i [3,3,1105,-1,9,1101,0,0,12,4,12,99,1])
-(def input9 [3,21,1008,21,8,20,1005,20,22,107,8,21,20,1006,20,31,1106,0,36,98,0,0,1002,21,125,20,4,20,1105,1,46,104,999,1105,1,46,1101,1000,1,20,4,20,1105,1,46,98,99])
+(def input1 [3,15,3,16,1002,16,10,16,1,16,15,15,4,15,99,0,0])
+(def input2 [3,23,3,24,1002,24,10,24,1002,23,-1,23,101,5,23,23,
+             1,24,23,23,4,23,99,0,0])
+(def input3 [3,31,3,32,1002,32,10,32,1001,31,-2,31,1007,31,0,33,
+             1002,33,7,33,1,33,31,31,1,32,31,31,4,31,99,0,0,0])
+(def input4 [3,26,1001,26,-4,26,3,27,1002,27,2,27,1,27,26,
+             27,4,27,1001,28,-1,28,1005,28,6,99,0,0,5])
 
-(defn part1 []
-  (intcode input2))
+(def inputDay7 (parse-program "files/day7.in"))
 
-(defn part2 []
-  (intcode input2))
+(comment
+
+  ;; provide phase first! and then provide input
+  (def inchan (chan))
+  (def outchan (chan))
+  (go
+    (intcode input1 inchan outchan)
+    (>! inchan 4)
+    (>! inchan 0))
+  (<!! outchan)
+
+  (<!! (thruster-signal input1 [4 3 2 1 0]))
+  
+  )
+
+(defn thruster-signal [program phases]
+  (let [inchan (chan)
+        outchan (chan)
+        resultchan (chan)]
+    (go-loop [phase (first phases)
+              phases (rest phases)]
+      (if phase
+        (do
+          (intcode program inchan outchan)
+          (>! inchan phase)
+          (>! inchan (<! outchan))
+          (recur (first phases) (rest phases)))
+        (>! resultchan (<! outchan))))
+    (>!! outchan 0)
+    (<!! resultchan)))
+
+(defn part1 [program]
+  (let [results (map #(thruster-signal program %)
+                 (combo/permutations [0 1 2 3 4]))]
+    (apply max results)))
 
